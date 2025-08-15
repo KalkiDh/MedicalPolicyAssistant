@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Document Q&A</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center">
+  <div class="max-w-2xl w-full mx-auto p-6 bg-white rounded-lg shadow-lg">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6 text-center">Document Q&A</h1>
+
+    <!-- File Upload Section -->
+    <div class="mb-8">
+      <h2 class="text-lg font-semibold text-gray-700 mb-2">Please upload a PDF document to begin.</h2>
+      <form id="upload-form" class="space-y-4">
+        <input
+          type="file"
+          id="file-input"
+          accept="application/pdf"
+          class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+        />
+        <button
+          type="submit"
+          id="upload-button"
+          class="w-full py-2 px-4 rounded-lg text-white font-semibold bg-blue-600 hover:bg-blue-700"
+        >
+          Upload
+        </button>
+      </form>
+      <p id="upload-success" class="mt-2 text-green-600 hidden"></p>
+      <p id="upload-error" class="mt-2 text-red-600 hidden"></p>
+    </div>
+
+    <!-- Query Section -->
+    <div>
+      <h2 class="text-lg font-semibold text-gray-700 mb-2">Ask a Question</h2>
+      <form id="query-form" class="space-y-4">
+        <textarea
+          id="query-input"
+          placeholder="Ask a question about the document..."
+          class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+          rows="2"
+        ></textarea>
+        <button
+          type="submit"
+          id="query-button"
+          class="w-full py-2 px-4 rounded-lg text-white font-semibold bg-blue-600 hover:bg-blue-700"
+        >
+          Send
+        </button>
+      </form>
+      <div id="answer" class="mt-6 p-4 bg-gray-50 rounded-lg hidden">
+        <h3 class="text-lg font-semibold text-gray-700 mb-2">Answer</h3>
+        <p id="answer-text" class="text-gray-600"></p>
+      </div>
+      <p id="query-error" class="mt-2 text-red-600 hidden"></p>
+    </div>
+  </div>
+
+  <script>
+    console.log('Initializing frontend...');
+
+    // Auto-resize textarea
+    const textarea = document.getElementById('query-input');
+    textarea.addEventListener('input', () => {
+      console.log('Textarea input detected, resizing...');
+      textarea.style.height = 'auto';
+      textarea.style.height = `${textarea.scrollHeight}px`;
+    });
+
+    // Handle file upload
+    const uploadForm = document.getElementById('upload-form');
+    const fileInput = document.getElementById('file-input');
+    const uploadButton = document.getElementById('upload-button');
+    const uploadSuccess = document.getElementById('upload-success');
+    const uploadError = document.getElementById('upload-error');
+
+    uploadForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      console.log('Upload form submitted');
+      const file = fileInput.files[0];
+      uploadSuccess.classList.add('hidden');
+      uploadError.classList.add('hidden');
+      uploadButton.textContent = 'Uploading...';
+      uploadButton.disabled = true;
+
+      if (!file) {
+        uploadError.textContent = 'No file selected.';
+        uploadError.classList.remove('hidden');
+        uploadButton.textContent = 'Upload';
+        uploadButton.disabled = false;
+        console.log('No file selected');
+        return;
+      }
+
+      if (file.type !== 'application/pdf') {
+        uploadError.textContent = 'Please select a valid PDF file.';
+        uploadError.classList.remove('hidden');
+        uploadButton.textContent = 'Upload';
+        uploadButton.disabled = false;
+        console.log('Invalid file type:', file.type);
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        console.log('Sending upload request for file:', file.name);
+        const response = await fetch('http://127.0.0.1:8000/upload', {
+          method: 'POST',
+          body: formData,
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          uploadSuccess.textContent = data.message;
+          uploadSuccess.classList.remove('hidden');
+          document.getElementById('answer').classList.add('hidden');
+          document.getElementById('query-input').value = '';
+          document.getElementById('query-error').classList.add('hidden');
+          console.log('Upload successful:', data.message);
+        } else {
+          uploadError.textContent = data.detail || 'Failed to upload document.';
+          uploadError.classList.remove('hidden');
+          console.log('Upload failed:', data.detail);
+        }
+      } catch (err) {
+        uploadError.textContent = 'Error uploading document: ' + err.message;
+        uploadError.classList.remove('hidden');
+        console.log('Upload error:', err.message);
+      } finally {
+        uploadButton.textContent = 'Upload';
+        uploadButton.disabled = false;
+      }
+    });
+
+    // Handle query submission
+    const queryForm = document.getElementById('query-form');
+    const queryInput = document.getElementById('query-input');
+    const queryButton = document.getElementById('query-button');
+    const answerSection = document.getElementById('answer');
+    const answerText = document.getElementById('answer-text');
+    const queryError = document.getElementById('query-error');
+
+    queryForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      console.log('Query form submitted');
+      const query = queryInput.value.trim();
+      queryError.classList.add('hidden');
+      queryButton.textContent = 'Processing...';
+      queryButton.disabled = true;
+
+      if (!query) {
+        queryError.textContent = 'Please enter a query.';
+        queryError.classList.remove('hidden');
+        queryButton.textContent = 'Send';
+        queryButton.disabled = false;
+        console.log('Empty query submitted');
+        return;
+      }
+
+      try {
+        console.log('Sending query request:', query);
+        const response = await fetch('http://127.0.0.1:8000/query', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            query: query,
+            session_id: 'default',
+          }),
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          answerText.textContent = data.answer;
+          answerSection.classList.remove('hidden');
+          console.log('Query successful:', data.answer);
+        } else {
+          queryError.textContent = data.detail || 'Failed to process query.';
+          queryError.classList.remove('hidden');
+          console.log('Query failed:', data.detail);
+        }
+      } catch (err) {
+        queryError.textContent = 'Error querying document: ' + err.message;
+        queryError.classList.remove('hidden');
+        console.log('Query error:', err.message);
+      } finally {
+        queryButton.textContent = 'Send';
+        queryButton.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
