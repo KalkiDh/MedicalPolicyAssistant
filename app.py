@@ -2,7 +2,7 @@ import os
 import shutil
 import time
 import tempfile
-import logging  # Added for detailed error logging
+import logging
 from typing import Dict
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -39,9 +39,9 @@ app.add_middleware(
 )
 
 # Global variables for RAG components
-retriever = None
 llm_client = None
-store: Dict[str, BaseChatMessageHistory] = {}
+vector_store = None
+histories: Dict[str, BaseChatMessageHistory] = {}
 
 # Load environment variables
 load_dotenv()
@@ -101,25 +101,25 @@ def split_text_into_chunks(text: str, chunk_size: int = 1000, chunk_overlap: int
     logger.info(f"Created {len(chunks)} chunks")
     return chunks
 
-def create_and_store_embeddings(chunks: list, persist_directory: str):
-    logger.info(f"Creating embeddings for {len(chunks)} chunks")
+def add_document_to_store(chunks: list, doc_id: str):
+    global vector_store
+    logger.info(f"Adding document {doc_id} with {len(chunks)} chunks to vector store")
     if not chunks:
-        raise ValueError("No chunks provided to embed.")
-    embedding_function = HuggingFaceEmbeddings(model_name='all-MiniLM-L6-v2')
-    vector_store = Chroma.from_texts(
-        texts=chunks, 
-        embedding=embedding_function, 
-        persist_directory=persist_directory
+        raise ValueError("No chunks provided to add.")
+    # Delete existing chunks for this doc_id
+    vector_store.delete(where={"doc_id": doc_id})
+    # Add new chunks
+    vector_store.add_texts(
+        texts=chunks,
+        metadatas=[{"doc_id": doc_id} for _ in chunks]
     )
-    vector_store.persist()
-    logger.info(f"Embeddings stored in: {persist_directory}")
-    return vector_store
+    logger.info(f"Document {doc_id} added to vector store")
 
-def get_session_history(session_id: str) -> BaseChatMessageHistory:
-    logger.info(f"Retrieving session history for session_id: {session_id}")
-    if session_id not in store:
-        store[session_id] = ChatMessageHistory()
-    return store[session_id]
+def get_session_history(doc_id: str) -> BaseChatMessageHistory:
+    logger.info(f"Retrieving session history for doc_id: {doc_id}")
+    if doc_id not in histories:
+        histories[doc_id] = ChatMessageHistory()
+    return histories[doc_id]
 
 def llm_invoke(input_data):
     logger.info("Invoking LLM")
@@ -154,6 +154,7 @@ def llm_invoke(input_data):
 @app.on_event("startup")
 async def startup_event():
     global llm_client
+    global vector_store
     logger.info("Starting up FastAPI application")
     token = os.environ.get("GITHUB_TOKEN")
     if not token:
@@ -165,6 +166,16 @@ async def startup_event():
         credential=AzureKeyCredential(token),
     )
     logger.info("LLM client initialized")
+
+    # Clean up db on startup to ensure no permanent storage
+    if os.path.exists("db"):
+        logger.info("Cleaning up db directory on startup")
+        shutil.rmtree("db")
+
+    # Initialize vector store
+    embedding_function = HuggingFaceEmbeddings(model_name='all-MiniLM-L6-v2')
+    vector_store = Chroma(persist_directory="db", embedding_function=embedding_function)
+    logger.info("Vector store initialized")
 
 @app.on_event("shutdown")
 def shutdown_event():
@@ -178,31 +189,32 @@ def shutdown_event():
         except PermissionError:
             logger.warning("PermissionError when deleting db directory")
 
-# --- Pydantic Model for Query ---
+# --- Pydantic Models ---
 
 class QueryRequest(BaseModel):
     query: str
+    doc_id: str
     session_id: str = "default"
+
+class HistoryRequest(BaseModel):
+    doc_id: str
 
 # --- Endpoints ---
 
 @app.post("/upload")
 async def upload_document(file: UploadFile = File(...)):
-    global retriever
     try:
-        logger.info(f"Uploading file: {file.filename}")
+        doc_id = file.filename
+        logger.info(f"Uploading file: {file.filename} as doc_id: {doc_id}")
         # Validate file extension
         if not file.filename.lower().endswith('.pdf'):
             logger.error("Invalid file type: not a PDF")
             raise HTTPException(status_code=400, detail="Only PDF files are supported.")
 
-        # Clean up previous directories
+        # Clean up Exports directory
         if os.path.exists("Exports"):
             logger.info("Cleaning up Exports directory")
             shutil.rmtree("Exports")
-        if os.path.exists("db"):
-            logger.info("Cleaning up db directory")
-            shutil.rmtree("db")
 
         # Save uploaded file to temp path with .pdf extension
         logger.info("Saving uploaded file to temporary path")
@@ -215,19 +227,20 @@ async def upload_document(file: UploadFile = File(...)):
         md_path = parse_local_document(doc_path)
         content = load_markdown(md_path)
         chunks = split_text_into_chunks(content)
-        vector_store = create_and_store_embeddings(chunks, "db")
-        retriever = vector_store.as_retriever(search_kwargs={'k': 5})
+        add_document_to_store(chunks, doc_id)
 
-        # Clean up temp file
+        # Clean up temp file and Exports
         logger.info(f"Cleaning up temporary file: {doc_path}")
         os.unlink(doc_path)
+        if os.path.exists("Exports"):
+            shutil.rmtree("Exports")
 
-        # Clear chat history
-        store.clear()
-        logger.info("Chat history cleared")
-
+        # Initialize history if not exists
+        if doc_id not in histories:
+            histories[doc_id] = ChatMessageHistory()
         logger.info("Document upload and processing successful")
-        return {"message": "Document uploaded and processed successfully."}
+
+        return {"message": "Document uploaded and processed successfully.", "doc_id": doc_id}
 
     except ValueError as ve:
         logger.error(f"ValueError in upload: {str(ve)}")
@@ -238,17 +251,20 @@ async def upload_document(file: UploadFile = File(...)):
 
 @app.post("/query")
 async def query_document(q: QueryRequest):
-    logger.info(f"Processing query: {q.query}")
-    if retriever is None:
-        logger.error("No document uploaded for query")
-        raise HTTPException(status_code=400, detail="No document uploaded. Please upload a PDF first.")
+    logger.info(f"Processing query for doc_id: {q.doc_id}, query: {q.query}")
+    if vector_store is None:
+        logger.error("Vector store not initialized")
+        raise HTTPException(status_code=500, detail="Vector store not initialized.")
 
     try:
-        chat_history = get_session_history(q.session_id)
+        chat_history = get_session_history(q.doc_id)
         formatted_history = [
             {"role": "user" if msg.type == "human" else "assistant", "content": msg.content}
             for msg in chat_history.messages
         ]
+
+        # Create retriever with filter for doc_id
+        retriever = vector_store.as_retriever(search_kwargs={'k': 5, 'filter': {'doc_id': q.doc_id}})
 
         contextualize_q_prompt = ChatPromptTemplate.from_messages([
             ("system", "Given a chat history and a follow up question, rephrase the question to be a standalone question."),
@@ -281,3 +297,18 @@ async def query_document(q: QueryRequest):
     except Exception as e:
         logger.error(f"Error querying document: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error querying document: {str(e)}")
+
+@app.post("/history")
+async def get_history(h: HistoryRequest):
+    logger.info(f"Fetching history for doc_id: {h.doc_id}")
+    try:
+        chat_history = get_session_history(h.doc_id)
+        history = [
+            {"role": "user" if msg.type == "human" else "assistant", "content": msg.content}
+            for msg in chat_history.messages
+        ]
+        logger.info(f"History retrieved for doc_id: {h.doc_id}, {len(history)} messages")
+        return {"history": history}
+    except Exception as e:
+        logger.error(f"Error fetching history: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error fetching history: {str(e)}")

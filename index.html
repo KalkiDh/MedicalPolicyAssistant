@@ -7,67 +7,134 @@
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100 min-h-screen flex items-center justify-center">
-  <div class="max-w-2xl w-full mx-auto p-6 bg-white rounded-lg shadow-lg">
-    <h1 class="text-2xl font-bold text-gray-800 mb-6 text-center">Document Q&A</h1>
+  <div class="max-w-4xl w-full mx-auto p-6 bg-white rounded-lg shadow-lg">
+    <h1 class="text-3xl font-bold text-gray-800 mb-8 text-center">Document Q&A</h1>
 
-    <!-- File Upload Section -->
-    <div class="mb-8">
-      <h2 class="text-lg font-semibold text-gray-700 mb-2">Please upload a PDF document to begin.</h2>
-      <form id="upload-form" class="space-y-4">
-        <input
-          type="file"
-          id="file-input"
-          accept="application/pdf"
-          class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-        />
-        <button
-          type="submit"
-          id="upload-button"
-          class="w-full py-2 px-4 rounded-lg text-white font-semibold bg-blue-600 hover:bg-blue-700"
-        >
-          Upload
-        </button>
-      </form>
-      <p id="upload-success" class="mt-2 text-green-600 hidden"></p>
-      <p id="upload-error" class="mt-2 text-red-600 hidden"></p>
-    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <!-- Left Column: Upload and Query -->
+      <div>
+        <!-- File Upload Section -->
+        <div class="mb-8">
+          <h2 class="text-lg font-semibold text-gray-700 mb-2">Upload PDF Document</h2>
+          <form id="upload-form" class="space-y-4">
+            <input
+              type="file"
+              id="file-input"
+              accept="application/pdf"
+              class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+            />
+            <button
+              type="submit"
+              id="upload-button"
+              class="w-full py-2 px-4 rounded-lg text-white font-semibold bg-blue-600 hover:bg-blue-700"
+            >
+              Upload
+            </button>
+          </form>
+          <p id="upload-success" class="mt-2 text-green-600 hidden"></p>
+          <p id="upload-error" class="mt-2 text-red-600 hidden"></p>
+        </div>
 
-    <!-- Query Section -->
-    <div>
-      <h2 class="text-lg font-semibold text-gray-700 mb-2">Ask a Question</h2>
-      <form id="query-form" class="space-y-4">
-        <textarea
-          id="query-input"
-          placeholder="Ask a question about the document..."
-          class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-          rows="2"
-        ></textarea>
-        <button
-          type="submit"
-          id="query-button"
-          class="w-full py-2 px-4 rounded-lg text-white font-semibold bg-blue-600 hover:bg-blue-700"
-        >
-          Send
-        </button>
-      </form>
-      <div id="answer" class="mt-6 p-4 bg-gray-50 rounded-lg hidden">
-        <h3 class="text-lg font-semibold text-gray-700 mb-2">Answer</h3>
-        <p id="answer-text" class="text-gray-600"></p>
+        <!-- Uploaded Documents -->
+        <div class="mb-8">
+          <h2 class="text-lg font-semibold text-gray-700 mb-2">Select Document</h2>
+          <div class="flex space-x-2">
+            <select id="doc-select" class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="">Select a document</option>
+            </select>
+            <button
+              id="clear-docs"
+              class="py-2 px-4 rounded-lg text-white font-semibold bg-red-600 hover:bg-red-700"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+
+        <!-- Query Section -->
+        <div>
+          <h2 class="text-lg font-semibold text-gray-700 mb-2">Ask a Question</h2>
+          <form id="query-form" class="space-y-4">
+            <textarea
+              id="query-input"
+              placeholder="Ask a question about the selected document..."
+              class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              rows="2"
+            ></textarea>
+            <button
+              type="submit"
+              id="query-button"
+              class="w-full py-2 px-4 rounded-lg text-white font-semibold bg-blue-600 hover:bg-blue-700"
+              disabled
+            >
+              Send
+            </button>
+          </form>
+          <p id="query-error" class="mt-2 text-red-600 hidden"></p>
+        </div>
       </div>
-      <p id="query-error" class="mt-2 text-red-600 hidden"></p>
+
+      <!-- Right Column: Conversation History -->
+      <div>
+        <h2 class="text-lg font-semibold text-gray-700 mb-2">Conversation History</h2>
+        <div id="history" class="bg-gray-50 p-4 rounded-lg max-h-96 overflow-y-auto">
+          <p id="history-empty" class="text-gray-500">No conversation history yet.</p>
+          <div id="history-content" class="space-y-4 hidden"></div>
+          <p id="history-loading" class="text-gray-500 hidden">Loading history...</p>
+        </div>
+      </div>
     </div>
   </div>
 
   <script>
     console.log('Initializing frontend...');
+    let uploadedDocs = JSON.parse(localStorage.getItem('uploadedDocs')) || [];
+    console.log('Initial uploadedDocs:', uploadedDocs);
 
     // Auto-resize textarea
     const textarea = document.getElementById('query-input');
+    const docSelect = document.getElementById('doc-select');
+    const queryButton = document.getElementById('query-button');
+    const queryInput = document.getElementById('query-input');
+    const historyEmpty = document.getElementById('history-empty');
+    const historyContent = document.getElementById('history-content');
+    const historyLoading = document.getElementById('history-loading');
+
     textarea.addEventListener('input', () => {
       console.log('Textarea input detected, resizing...');
       textarea.style.height = 'auto';
       textarea.style.height = `${textarea.scrollHeight}px`;
+      updateQueryButtonState();
     });
+
+    // Enable/disable query button based on input validity
+    function updateQueryButtonState() {
+      const query = queryInput.value.trim();
+      const docId = docSelect.value;
+      queryButton.disabled = !query || !docId;
+      console.log('Query button state:', { query, docId, disabled: queryButton.disabled });
+    }
+
+    queryInput.addEventListener('input', updateQueryButtonState);
+    docSelect.addEventListener('change', () => {
+      updateQueryButtonState();
+      fetchHistory();
+    });
+
+    // Populate document dropdown from localStorage
+    function populateDocSelect() {
+      console.log('Populating doc select with:', uploadedDocs);
+      while (docSelect.options.length > 1) {
+        docSelect.remove(1);
+      }
+      uploadedDocs.forEach(docId => {
+        const option = document.createElement('option');
+        option.value = docId;
+        option.textContent = docId;
+        docSelect.appendChild(option);
+      });
+    }
+    populateDocSelect();
 
     // Handle file upload
     const uploadForm = document.getElementById('upload-form');
@@ -118,10 +185,17 @@
         if (response.ok) {
           uploadSuccess.textContent = data.message;
           uploadSuccess.classList.remove('hidden');
-          document.getElementById('answer').classList.add('hidden');
           document.getElementById('query-input').value = '';
           document.getElementById('query-error').classList.add('hidden');
-          console.log('Upload successful:', data.message);
+          // Add document to dropdown and localStorage
+          if (!uploadedDocs.includes(data.doc_id)) {
+            uploadedDocs.push(data.doc_id);
+            localStorage.setItem('uploadedDocs', JSON.stringify(uploadedDocs));
+            populateDocSelect();
+            docSelect.value = data.doc_id; // Auto-select new document
+            fetchHistory(); // Fetch history for new document
+          }
+          console.log('Upload successful:', data.message, 'doc_id:', data.doc_id);
         } else {
           uploadError.textContent = data.detail || 'Failed to upload document.';
           uploadError.classList.remove('hidden');
@@ -137,18 +211,89 @@
       }
     });
 
+    // Handle clear documents
+    const clearDocsButton = document.getElementById('clear-docs');
+    clearDocsButton.addEventListener('click', () => {
+      console.log('Clearing documents');
+      localStorage.removeItem('uploadedDocs');
+      uploadedDocs = [];
+      populateDocSelect();
+      historyContent.innerHTML = '';
+      historyContent.classList.add('hidden');
+      historyEmpty.classList.remove('hidden');
+      updateQueryButtonState();
+    });
+
+    // Fetch and display conversation history
+    async function fetchHistory() {
+      const docId = docSelect.value;
+      if (!docId) {
+        historyContent.innerHTML = '';
+        historyContent.classList.add('hidden');
+        historyEmpty.classList.remove('hidden');
+        historyLoading.classList.add('hidden');
+        console.log('No docId selected for history fetch');
+        return;
+      }
+
+      historyEmpty.classList.add('hidden');
+      historyContent.classList.add('hidden');
+      historyLoading.classList.remove('hidden');
+
+      try {
+        console.log('Fetching history for doc_id:', docId);
+        const response = await fetch('http://127.0.0.1:8000/history', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ doc_id: docId }),
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          historyContent.innerHTML = '';
+          if (data.history.length === 0) {
+            historyContent.classList.add('hidden');
+            historyEmpty.classList.remove('hidden');
+          } else {
+            historyEmpty.classList.add('hidden');
+            historyContent.classList.remove('hidden');
+            data.history.forEach((msg, index) => {
+              const div = document.createElement('div');
+              div.className = `p-2 rounded-lg ${msg.role === 'user' ? 'bg-blue-100 text-blue-800' : 'bg-gray-200 text-gray-800'}`;
+              div.innerHTML = `
+                <p class="text-sm font-semibold">${msg.role === 'user' ? 'You' : 'AI'} (${new Date().toLocaleString()}):</p>
+                <p>${msg.content}</p>
+              `;
+              historyContent.appendChild(div);
+            });
+          }
+          console.log('History fetched:', data.history);
+        } else {
+          historyEmpty.textContent = `Failed to fetch history: ${data.detail || 'Unknown error'}`;
+          historyEmpty.classList.remove('hidden');
+          console.log('History fetch failed:', data.detail);
+        }
+      } catch (err) {
+        historyEmpty.textContent = `Error fetching history: ${err.message}`;
+        historyEmpty.classList.remove('hidden');
+        console.log('History fetch error:', err.message);
+      } finally {
+        historyLoading.classList.add('hidden');
+      }
+    }
+
     // Handle query submission
     const queryForm = document.getElementById('query-form');
-    const queryInput = document.getElementById('query-input');
-    const queryButton = document.getElementById('query-button');
-    const answerSection = document.getElementById('answer');
-    const answerText = document.getElementById('answer-text');
     const queryError = document.getElementById('query-error');
 
     queryForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       console.log('Query form submitted');
       const query = queryInput.value.trim();
+      const docId = docSelect.value;
       queryError.classList.add('hidden');
       queryButton.textContent = 'Processing...';
       queryButton.disabled = true;
@@ -162,8 +307,17 @@
         return;
       }
 
+      if (!docId) {
+        queryError.textContent = 'Please select a document.';
+        queryError.classList.remove('hidden');
+        queryButton.textContent = 'Send';
+        queryButton.disabled = false;
+        console.log('No document selected');
+        return;
+      }
+
       try {
-        console.log('Sending query request:', query);
+        console.log('Sending query request:', query, 'for doc_id:', docId);
         const response = await fetch('http://127.0.0.1:8000/query', {
           method: 'POST',
           headers: {
@@ -171,6 +325,7 @@
           },
           body: JSON.stringify({
             query: query,
+            doc_id: docId,
             session_id: 'default',
           }),
         });
@@ -178,8 +333,8 @@
         const data = await response.json();
 
         if (response.ok) {
-          answerText.textContent = data.answer;
-          answerSection.classList.remove('hidden');
+          queryInput.value = '';
+          await fetchHistory(); // Refresh history after new query
           console.log('Query successful:', data.answer);
         } else {
           queryError.textContent = data.detail || 'Failed to process query.';
@@ -192,9 +347,13 @@
         console.log('Query error:', err.message);
       } finally {
         queryButton.textContent = 'Send';
-        queryButton.disabled = false;
+        updateQueryButtonState();
       }
     });
+
+    // Initial history fetch and button state
+    updateQueryButtonState();
+    fetchHistory();
   </script>
 </body>
 </html>
