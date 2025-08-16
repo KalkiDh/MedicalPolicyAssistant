@@ -85,10 +85,8 @@ if __name__ == "__main__":
         llm_client = initialize_llm_client()
 
         # 4. Setup conversation history with a system message
-        system_prompt = SystemMessage(
-            content="You are a helpful assistant that answers questions based *only* on the provided document context. "
-                    "If the answer is not found in the context, say 'I cannot answer this based on the provided document.'"
-        )
+        qa_system_prompt = """You are a specialized assistant for medical and insurance policy-related questions. Answer questions based *only* on the provided medical or insurance policy document context, ensuring responses are concise (maximum three sentences) and professional. If a question is unrelated to the document, not medical/insurance-related, or the answer is not found in the context, respond with: 'I cannot answer this based on the provided medical or insurance policy document.'"""
+        system_prompt = SystemMessage(content=qa_system_prompt)
         conversation_history = [system_prompt]
         print("System prompt set. Ready to chat.")
 
