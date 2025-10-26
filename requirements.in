@@ -7,3 +7,5 @@ langchain-huggingface==0.1.0
 langchain-chroma==0.1.4
 chromadb==0.5.7
 python-dotenv==1.0.1
+azure-ai-inference==1.0.0b2
+python-multipart
